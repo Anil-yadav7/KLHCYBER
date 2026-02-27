@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir streamlit plotly pandas requests
+COPY frontend/ ./frontend/
+EXPOSE 8501
+CMD ["streamlit", "run", "frontend/dashboard.py", "--server.port=8501"]

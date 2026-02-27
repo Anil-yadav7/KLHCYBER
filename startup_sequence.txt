@@ -1,0 +1,17 @@
+Terminal 1: Redis
+redis-server
+
+Terminal 2: FastAPI (uvicorn)
+uvicorn backend.api.main:app --reload
+
+Terminal 3: Celery Worker
+celery -A backend.workers.celery_app.celery_app worker --loglevel=info
+
+Terminal 4: Celery Beat
+celery -A backend.workers.celery_app.celery_app beat --loglevel=info
+
+Terminal 5: Streamlit Dashboard
+streamlit run frontend/dashboard.py
+
+Terminal 6: Flower Monitor (optional)
+celery -A backend.workers.celery_app.celery_app flower --port=5555

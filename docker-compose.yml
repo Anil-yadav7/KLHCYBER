@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # The core FastAPI backend application server handling HTTP requests and CRUD operations
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - '8000:8000'
+    depends_on:
+      - redis
+      - postgres
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+  # Background task processor for heavy operations like HIBP API sweeps and LLM interactions
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.workers.celery_app.celery_app worker --loglevel=info --queues=default,periodic,notifications
+    depends_on:
+      - redis
+      - postgres
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+  # The Celery scheduler that automatically triggers the 6-hour interval monitoring scans
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.workers.celery_app.celery_app beat --loglevel=info --scheduler=celery.schedulers:PersistentScheduler
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+  # Web-based visual monitoring UI for tracking Celery worker queues and task delivery statuses
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.workers.celery_app.celery_app flower --port=5555
+    ports:
+      - '5555:5555'
+    depends_on:
+      - redis
+      - celery_worker
+    restart: unless-stopped
+
+  # The Streamlit user-facing frontend dashboard that communicates directly with the FastAPI backend
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    command: streamlit run frontend/dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - '8501:8501'
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      - API_BASE_URL=http://api:8000/api/v1
+    restart: unless-stopped
+
+  # Highly-performant in-memory message broker required by Celery to schedule and route task executions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Persistent relational database storing all configuration, monitored emails, and historical breach logs
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: breachshield
+      POSTGRES_USER: breachshield
+      POSTGRES_PASSWORD: breachshield_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  pgdata:
+
+networks:
+  default:
+    name: breachshield_network
